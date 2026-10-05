@@ -130,12 +130,11 @@ def mesh_empty(scene, settings):
 def mesh_nonmanifold(scene, settings):
     for mesh in scene.meshes:
         if mesh.nonmanifold_edges:
-            yield _issue(mesh.path, "%s shared by more than two faces"
-                         % _n(len(mesh.nonmanifold_edges), "edge"), "e", mesh.nonmanifold_edges)
+            yield _issue(mesh.path, "%s (shared by more than two faces)"
+                         % _n(len(mesh.nonmanifold_edges), "non-manifold edge"), "e", mesh.nonmanifold_edges)
         if mesh.nonmanifold_vertices:
-            yield _issue(mesh.path, "%s joining faces that share no edge"
-                         % _n(len(mesh.nonmanifold_vertices), "vertex", "vertices"),
-                         "vtx", mesh.nonmanifold_vertices)
+            yield _issue(mesh.path, _n(len(mesh.nonmanifold_vertices), "non-manifold vertex",
+                                       "non-manifold vertices"), "vtx", mesh.nonmanifold_vertices)
 
 
 @check("mesh.lamina_faces", ERROR, "Faces stacked on top of each other")

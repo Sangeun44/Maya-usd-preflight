@@ -36,6 +36,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: mayapy -m pip install pytest
+      - name: Install the Maya USD plug-in
+        # The container has Maya but not Maya USD, so add Autodesk's release build.
+        continue-on-error: true
+        run: |
+          case "${{ matrix.maya }}" in
+            2024) build=2024.2 ;;
+            2025) build=2025.3 ;;
+          esac
+          url="https://github.com/Autodesk/maya-usd/releases/download/v${MAYAUSD}/MayaUSD_${MAYAUSD}_Maya${build}_Linux.run"
+          code=0
+          sh .github/install_mayausd.sh "$url" > install.log 2>&1 || code=$?
+          cat install.log
+          printf '::notice title=Maya USD install (exit %s)::' "$code"; tail -c 6000 install.log | sed -e 's/%/%25/g' | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/%0A/g'
+          exit "$code"
+        env:
+          MAYAUSD: "0.37.0"
       - run: mayapy -m pytest tests/maya -v -rs
       - name: Maya and Maya USD versions
         if: always()

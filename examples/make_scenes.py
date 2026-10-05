@@ -90,8 +90,8 @@ def build_broken(project: str, outside: str) -> None:
 
     # material.unassigned_faces: one face of the crate has no material.
     crate = box("crate", props)
+    cmds.sets(crate, edit=True, remove="initialShadingGroup")
     cmds.sets(crate + ".f[1:5]", edit=True, forceElement=wood)
-    cmds.sets(crate + ".f[0]", edit=True, remove="initialShadingGroup")
 
     # name.namespace_clash: ref:crate and crate become the same prim.
     cmds.namespace(add="ref")

@@ -71,7 +71,8 @@ def test_nonmanifold_edges_and_vertices_are_selectable():
     assert [i.severity for i in issues] == [ERROR, ERROR]
     assert issues[0].selection() == ["|props|crate.e[3]", "|props|crate.e[7]"]
     assert issues[1].selection() == ["|props|crate.vtx[2]"]
-    assert "2 edges" in issues[0].message and "1 vertex " in issues[1].message
+    assert issues[0].message.startswith("2 non-manifold edges")
+    assert issues[1].message == "1 non-manifold vertex"
 
 
 def test_lamina_faces():

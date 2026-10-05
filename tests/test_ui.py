@@ -18,7 +18,7 @@ def app():
 def report(with_error=True):
     issues = [Issue("mesh.ngons", WARNING, "|props|barrel", "2 faces with more than 4 sides", "f", [8, 9])]
     if with_error:
-        issues.append(Issue("mesh.nonmanifold", ERROR, "|props|tee", "1 edge shared by more than two faces", "e", [0]))
+        issues.append(Issue("mesh.nonmanifold", ERROR, "|props|tee", "1 non-manifold edge (shared by more than two faces)", "e", [0]))
         issues.append(Issue("texture.missing", ERROR, "wood_albedo", "texture not found: missing.png"))
     return Report(scene="/show/crate.ma", up_axis="y", linear_unit="cm", issues=issues)
 

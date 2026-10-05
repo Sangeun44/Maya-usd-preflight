@@ -42,7 +42,9 @@ def test_clean_scene_has_no_issues(project):
     assert sorted(m.path for m in scene.meshes) == ["|props|crate", "|props|lid"]
     assert len(scene.joints) == 3
     assert os.path.samefile(scene.workspace, project)
-    assert scene.materials[0].textures[0].path == "sourceimages/crate_albedo.png"
+    # Maya turns the relative path it was given into an absolute one, since the file exists.
+    assert os.path.samefile(scene.materials[0].textures[0].path,
+                            os.path.join(project, "sourceimages", "crate_albedo.png"))
     report = run_checks(scene)
     assert report.issues == [], report.format_text()
 
@@ -82,6 +84,16 @@ def test_issues_point_at_components_maya_can_select(broken):
         if issue.node:
             cmds.select(targets, replace=True)          # raises if Maya cannot resolve them
             assert cmds.ls(selection=True)
+
+
+def test_mesh_with_no_material_at_all(project):
+    cmds.file(new=True, force=True)
+    bare = cmds.polyCube(name="bare")[0]
+    cmds.sets(bare, edit=True, remove="initialShadingGroup")
+    mesh = collect().meshes[0]
+    assert mesh.unassigned_faces == list(range(6)) and mesh.shading_groups == []
+    issues = [i for i in run_checks(collect()).issues if i.check == "material.unassigned_faces"]
+    assert [i.message for i in issues] == ["mesh has no material assigned"]
 
 
 def test_selection_scope(broken):
@@ -124,19 +136,20 @@ def test_plugin_command(broken, tmp_path):
     cmds.loadPlugin("usdPreflight.py")
     try:
         assert cmds.pluginInfo("usdPreflight", query=True, version=True) == "0.1.0"
-        data = json.loads(cmds.usdPreflight())
-        assert data["errors"] > 0 and data["up_axis"] == "y"
-        assert sorted({(i["check"], i["node"]) for i in data["issues"]}) == pairs(run_checks(collect()))
+        expected = run_checks(collect())
+        assert cmds.usdPreflight() == [len(expected.errors), len(expected.warnings)]
+
+        report_path = tmp_path / "report.json"
+        cmds.usdPreflight(report=str(report_path))
+        data = json.loads(report_path.read_text())
+        assert data["up_axis"] == "y"
+        assert sorted({(i["check"], i["node"]) for i in data["issues"]}) == pairs(expected)
 
         cmds.select("|props|squashed", replace=True)
-        selected = json.loads(cmds.usdPreflight(selection=True))
-        assert [i["check"] for i in selected["issues"]] == ["mesh.nonuniform_scale"]
-
+        assert cmds.usdPreflight(selection=True) == [0, 1]
         profile = tmp_path / "strict.json"
         profile.write_text(json.dumps({"severity": {"mesh.nonuniform_scale": "error"}}))
-        report_path = tmp_path / "report.json"
-        cmds.usdPreflight(selection=True, profile=str(profile), report=str(report_path))
-        assert json.loads(report_path.read_text())["errors"] == 1
+        assert cmds.usdPreflight(selection=True, profile=str(profile)) == [1, 0]
     finally:
         cmds.unloadPlugin("usdPreflight")
     assert not cmds.pluginInfo("usdPreflight", query=True, loaded=True)

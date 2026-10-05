@@ -3,8 +3,8 @@
 Loading it registers the `usdPreflight` command and adds a "USD Preflight"
 menu to the main window.
 
-    cmds.loadPlugin("usdPreflight")
-    report = json.loads(cmds.usdPreflight())                       # whole scene
+    cmds.loadPlugin("usdPreflight.py")
+    errors, warnings = cmds.usdPreflight()                         # whole scene
     cmds.usdPreflight(selection=True, export="/tmp/crate.usda")    # selection, then export
 
 Flags:
@@ -14,7 +14,8 @@ Flags:
     -f  / -force              export even if a check fails
     -r  / -report   <path>    also write the report to a JSON file
 
-The command returns the report as a JSON string.
+The command prints the report and returns [errors, warnings]. For the full
+report in a script, use -report, or call usd_preflight.run.preflight() directly.
 """
 import os
 import sys
@@ -74,7 +75,9 @@ class UsdPreflightCmd(om.MPxCommand):
                                       % report.summary())
         elif not report.ok:
             om.MGlobal.displayWarning("usdPreflight: %s" % report.summary())
-        self.setResult(report.to_json(indent=None))
+        self.clearResult()
+        self.appendToResult(len(report.errors))
+        self.appendToResult(len(report.warnings))
 
 
 def _add_menu():
