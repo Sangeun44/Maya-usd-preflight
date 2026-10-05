@@ -36,23 +36,65 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: mayapy -m pip install pytest
-      - name: Install the Maya USD plug-in
-        # The container has Maya but not Maya USD, so add Autodesk's release build.
+      # The container has Maya but not Maya USD, so add Autodesk's release build.
+      # Its installer is a self-extracting archive wrapping an rpm: unpack it
+      # without running it, then unpack the rpm into /.
+      - name: "Maya USD: download"
         continue-on-error: true
-        timeout-minutes: 12
+        timeout-minutes: 6
         run: |
           case "${{ matrix.maya }}" in
             2024) build=2024.2 ;;
             2025) build=2025.3 ;;
           esac
           url="https://github.com/Autodesk/maya-usd/releases/download/v${MAYAUSD}/MayaUSD_${MAYAUSD}_Maya${build}_Linux.run"
+          mkdir -p /tmp/mayausd
           code=0
-          timeout 540 sh .github/install_mayausd.sh "$url" > install.log 2>&1 || code=$?
-          cat install.log
-          printf '::notice title=Maya USD install (exit %s)::' "$code"; tail -c 6000 install.log | sed -e 's/%/%25/g' | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/%0A/g'
+          {
+            head -n 2 /etc/os-release
+            for tool in curl wget timeout rpm rpm2cpio cpio dnf yum apt-get bash; do command -v "$tool" || echo "no $tool"; done
+            echo "$url"
+            mayapy -c "import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])" "$url" /tmp/mayausd/installer.run
+            ls -l /tmp/mayausd/installer.run
+            head -c 1200 /tmp/mayausd/installer.run
+          } > step.log 2>&1 || code=$?
+          sh .github/notice.sh "Maya USD download (exit $code)" step.log
           exit "$code"
         env:
           MAYAUSD: "0.37.0"
+      - name: "Maya USD: unpack"
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          code=0
+          {
+            sh /tmp/mayausd/installer.run --noexec --target /tmp/mayausd/unpacked < /dev/null
+            ls -l /tmp/mayausd/unpacked
+          } > step.log 2>&1 || code=$?
+          sh .github/notice.sh "Maya USD unpack (exit $code)" step.log
+          exit "$code"
+      - name: "Maya USD: install"
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          code=0
+          {
+            rpm_file=$(find /tmp/mayausd/unpacked -name "*.rpm" | head -n 1)
+            echo "rpm: $rpm_file"
+            if command -v rpm > /dev/null; then
+              rpm -ivh --nodeps "$rpm_file" < /dev/null
+            else
+              export DEBIAN_FRONTEND=noninteractive
+              command -v rpm2cpio > /dev/null || { apt-get update -q && apt-get install -y -q rpm2cpio cpio; } < /dev/null
+              (cd / && rpm2cpio "$rpm_file" | cpio -idm --quiet)
+            fi
+            module=$(find /usr/autodesk -name "mayaUSD.mod" | head -n 1)
+            echo "module file: $module"
+            test -n "$module"
+            echo "MAYA_MODULE_PATH=$(dirname "$module")" >> "$GITHUB_ENV"
+          } > step.log 2>&1 || code=$?
+          sh .github/notice.sh "Maya USD install (exit $code)" step.log
+          exit "$code"
       - run: mayapy -m pytest tests/maya -v -rs
       - name: Maya and Maya USD versions
         if: always()
@@ -71,7 +113,7 @@ jobs:
           code=0
           mayapy preflight_batch.py examples/scenes --out out --snapshots > batch.log 2>&1 || code=$?
           cat batch.log
-          printf '::notice title=batch (exit %s)::' "$code"; tail -c 6000 batch.log | sed -e 's/%/%25/g' | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/%0A/g'
+          sh .github/notice.sh "batch (exit $code)" batch.log
           echo "exit code $code"
           # One of the two scenes is broken on purpose, so exactly one must fail.
           test "$code" -eq 1
@@ -80,7 +122,7 @@ jobs:
           code=0
           mayapy preflight_batch.py examples/scenes --out out --export > export.log 2>&1 || code=$?
           cat export.log
-          printf '::notice title=batch export (exit %s)::' "$code"; tail -c 6000 export.log | sed -e 's/%/%25/g' | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/%0A/g'
+          sh .github/notice.sh "batch export (exit $code)" export.log
           echo "exit code $code"
           if [ "$code" -eq 2 ]; then
             echo "::warning::Maya USD plug-in is not in this image, so the export was not tested"
