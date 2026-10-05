@@ -37,18 +37,33 @@ jobs:
       - uses: actions/checkout@v4
       - run: mayapy -m pip install pytest
       - run: mayapy -m pytest tests/maya -v -rs
+      - name: Maya and Maya USD versions
+        if: always()
+        run: |
+          mayapy -c "import maya.standalone; maya.standalone.initialize(); from maya import cmds; import sys, os
+          print('::notice title=Maya::' + cmds.about(version=True) + ' / Python ' + sys.version.split()[0])
+          try:
+              cmds.loadPlugin('mayaUsdPlugin', quiet=True); print('::notice title=Maya USD::' + str(cmds.pluginInfo('mayaUsdPlugin', query=True, version=True)))
+          except RuntimeError as e:
+              print('::notice title=Maya USD::not available: ' + str(e).strip().splitlines()[-1])
+          sys.stdout.flush(); os._exit(0)"
       - name: Build the example scenes and batch-check them
+        if: always()
         run: |
           mayapy examples/make_scenes.py examples/scenes
           code=0
-          mayapy preflight_batch.py examples/scenes --out out --snapshots || code=$?
+          mayapy preflight_batch.py examples/scenes --out out --snapshots > batch.log 2>&1 || code=$?
+          cat batch.log
+          printf '::notice title=batch (exit %s)::' "$code"; tail -c 6000 batch.log | sed -e 's/%/%25/g' | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/%0A/g'
           echo "exit code $code"
           # One of the two scenes is broken on purpose, so exactly one must fail.
           test "$code" -eq 1
       - name: Batch export (needs the Maya USD plug-in)
         run: |
           code=0
-          mayapy preflight_batch.py examples/scenes --out out --export || code=$?
+          mayapy preflight_batch.py examples/scenes --out out --export > export.log 2>&1 || code=$?
+          cat export.log
+          printf '::notice title=batch export (exit %s)::' "$code"; tail -c 6000 export.log | sed -e 's/%/%25/g' | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/%0A/g'
           echo "exit code $code"
           if [ "$code" -eq 2 ]; then
             echo "::warning::Maya USD plug-in is not in this image, so the export was not tested"

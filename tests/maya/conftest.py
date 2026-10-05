@@ -20,6 +20,22 @@ def pytest_sessionfinish(session, exitstatus):
     _status[0] = int(exitstatus)
 
 
+def _annotation(level, title, text):
+    """A GitHub Actions annotation, so a failure shows on the commit page."""
+    text = text[-6000:].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    return "::%s title=%s::%s" % (level, title, text)
+
+
+def pytest_terminal_summary(terminalreporter):
+    if not os.environ.get("GITHUB_ACTIONS"):
+        return
+    for level, outcomes in (("error", ("failed", "error")), ("notice", ("skipped",))):
+        for outcome in outcomes:
+            for report in terminalreporter.stats.get(outcome, []):
+                name = getattr(report, "nodeid", "").split("::")[-1] or outcome
+                terminalreporter.write_line(_annotation(level, name, str(report.longrepr)))
+
+
 def pytest_unconfigure(config):
     # mayapy can hang or crash while shutting Maya down, which would turn a
     # green run red. Everything has been reported by now, so leave directly.
