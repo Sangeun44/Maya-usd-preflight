@@ -11,7 +11,37 @@ file and makes sure it matches the scene.
 
 ![The panel listing the issues found in the broken example scene](docs/panel.png)
 
-*The panel, drawn outside Maya from the results for `examples/make_scenes.py`'s broken scene.*
+*The panel showing what Maya reports for the broken example scene. The image is
+drawn outside Maya (`examples/render_panel.py`); the panel has not been opened
+inside Maya yet.*
+
+The same scene in batch mode, from the CI run in Maya 2025:
+
+```console
+$ mayapy preflight_batch.py examples/scenes --out out --snapshots
+broken_crate.ma: 9 errors, 9 warnings  (Y up, cm)
+  ERROR    joint.segment_scale        |arm_root|arm_mid  Segment Scale Compensate is on and the parent joint is scaled (2, 2, 2); USD has no equivalent, so this joint and its children will change size
+  ERROR    material.unassigned_faces  |props|crate       1 face with no material assigned
+  ERROR    mesh.negative_scale        |props|mirrored    world transform is mirrored (negative scale), which flips the face winding; freeze the scale and fix the normals
+  ERROR    mesh.nonmanifold           |props|tee         1 non-manifold edge (shared by more than two faces)
+  ERROR    mesh.nonmanifold           |props|tee         2 non-manifold vertices
+  ERROR    mesh.zero_area_faces       |props|sliver      1 face with zero area
+  ERROR    name.namespace_clash       |props|crate       becomes /props/crate in USD, the same prim as |props|ref:crate
+  ERROR    name.namespace_clash       |props|ref:crate   becomes /props/crate in USD, the same prim as |props|crate
+  ERROR    texture.missing            wood_albedo        texture not found: sourceimages/missing_albedo.png
+  WARNING  joint.orientation          |arm_root          no local axis points down the bone; tools that derive bone direction from the joint's axes will orient it differently
+  WARNING  joint.rotate_axis          |arm_root|arm_mid  Rotate Axis is (30, 0, 0); USD stores one matrix per joint, so this is baked in and the joint's axes change in other tools
+  WARNING  joint.scale                |arm_root          joint scale is (2, 2, 2), not 1
+  WARNING  material.default_only      |props|mirrored    still uses Maya's default material (lambert1)
+  WARNING  mesh.missing_uvs           |props|barrel      mesh has no UVs
+  WARNING  mesh.missing_uvs           |props|tee         mesh has no UVs
+  WARNING  mesh.ngons                 |props|barrel      2 faces with more than 4 sides; each importer triangulates these its own way
+  WARNING  mesh.nonuniform_scale      |props|squashed    world scale is non-uniform (1, 0.5, 1); collision shapes will not match
+  WARNING  texture.outside_project    paint_albedo       absolute path outside the project, so the export only works on this machine: /__w/.../examples/scenes_elsewhere/paint_albedo.png
+clean_crate.ma: 0 errors, 0 warnings  (Y up, cm)
+
+1 of 2 scenes passed
+```
 
 ## What it checks
 
@@ -20,7 +50,7 @@ file and makes sure it matches the scene.
 | `scene.empty` | error | No meshes or joints to export |
 | `scene.up_axis`, `scene.units` | error | Scene up axis or linear unit differs from the profile (off unless the profile sets them) |
 | `mesh.empty` | error | A mesh with no faces |
-| `mesh.nonmanifold` | error | Edges shared by more than two faces, vertices joining faces that share no edge |
+| `mesh.nonmanifold` | error | Non-manifold edges (shared by more than two faces) and vertices |
 | `mesh.lamina_faces` | error | Faces stacked on each other, sharing all their edges |
 | `mesh.zero_area_faces` | error | Faces collapsed to a line or a point |
 | `mesh.ngons` | warning | Faces with more than four sides (each importer triangulates them its own way) |
@@ -88,13 +118,13 @@ or the selection, click an issue to select what is wrong, export when it is
 clean. Export stays disabled while there are errors unless you tick *Export
 even with errors*.
 
-**The command.** Returns the report as JSON and prints it to the Script Editor.
+**The command.** Prints the report to the Script Editor and returns
+`[errors, warnings]`.
 
 ```python
-import json
 from maya import cmds
 
-report = json.loads(cmds.usdPreflight())
+errors, warnings = cmds.usdPreflight()
 cmds.usdPreflight(selection=True, export="C:/show/crate.usda", report="C:/show/crate.report.json")
 ```
 
@@ -109,6 +139,17 @@ usdPreflight -selection -profile "profiles/sim_ready.json";
 | `-ex` / `-export PATH` | Export to USD if no check fails, then check the file |
 | `-f` / `-force` | Export even if a check fails |
 | `-r` / `-report PATH` | Also write the report to a JSON file |
+
+**From Python.** The command is a thin layer over one function, which returns
+the report object.
+
+```python
+from usd_preflight.run import preflight
+
+report = preflight(selection=True)
+for issue in report.errors:
+    print(issue.check, issue.node, issue.message)
+```
 
 **Batch.** No interface, one report per scene, exit code 1 if any scene has errors.
 
@@ -188,15 +229,26 @@ mayapy -m pytest tests/maya -v
 
 `examples/make_scenes.py` builds a clean scene and a broken one with one known
 problem per object. The Maya tests check that reading the broken scene reports
-exactly those problems, on those nodes, and that the clean scene reports none,
-exports, and matches its file. CI runs them in Maya 2024 and 2025 containers.
+exactly those problems, on those nodes; that every reported face, edge and
+vertex is something Maya can select; that the clean scene reports nothing;
+and that the plug-in loads through its module file, runs its command with
+each flag, and unloads.
+
+CI runs them inside Maya 2024 and Maya 2025 (the community `tahv/mayapy`
+Linux images), then builds both example scenes and runs batch mode on them.
 
 ## Status and limits
 
-- The Maya side has not been run yet. The code that reads the scene, the
-  command and the export are written against the Maya documentation and are
-  waiting on their first CI run inside Maya.
-- The panel has only been run outside Maya, on callbacks.
+- Run in Maya 2024 and 2025 on Linux, in CI. Not yet run on Windows or macOS,
+  or on a production scene.
+- **The export step has not been run inside Maya.** The CI image has Maya but
+  not the Maya USD plug-in, so the three export tests skip there. The
+  comparison itself is tested against stages written with `usd-core`, but the
+  `mayaUSDExport` call and how its real output compares are unverified. On a
+  desktop install of Maya, where Maya USD is included, `mayapy -m pytest
+  tests/maya` runs those tests too.
+- The panel is tested outside Maya, on callbacks. It has not been opened in
+  Maya's interface.
 - Only polygon meshes and joints are read. NURBS, curves, cameras, lights and
   animation are not checked.
 - Skinned meshes are exported in their bind pose, so for a posed character a
@@ -207,6 +259,7 @@ exports, and matches its file. CI runs them in Maya 2024 and 2025 containers.
 
 ## Next steps
 
+- [ ] Run the export tests in a Maya with Maya USD, and open the panel in Maya
 - [ ] Fix buttons for the mechanical problems (assign a material, freeze scale)
 - [ ] Check that file textures have a colour space the exporter understands
 - [ ] Skin weights: influences per vertex, unnormalised weights
