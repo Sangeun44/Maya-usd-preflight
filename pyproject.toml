@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maya-usd-preflight"
+version = "0.1.0"
+description = "A Maya plug-in that checks a scene before it is exported to USD, then checks the export."
+readme = "README.md"
+requires-python = ">=3.9"
+# No dependencies: inside Maya everything it needs is already there.
+
+[project.optional-dependencies]
+# For running the checks and the tests outside Maya.
+dev = ["pytest>=8", "usd-core>=24.11"]
+
+[tool.setuptools.packages.find]
+where = ["scripts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,11 @@
+{
+  "up_axis": "z",
+  "linear_unit": "cm",
+  "max_face_sides": 4,
+  "severity": {
+    "mesh.ngons": "error",
+    "mesh.missing_uvs": "error",
+    "mesh.nonuniform_scale": "error"
+  },
+  "disable": []
+}

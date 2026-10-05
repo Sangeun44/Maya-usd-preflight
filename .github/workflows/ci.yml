@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # The checks and the export verification, which need no Maya.
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libxkbcommon0
+      - run: pip install -e ".[dev]" PySide6
+      - run: pytest -q -rs
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+  # The Maya half, inside real Maya.
+  maya:
+    strategy:
+      fail-fast: false
+      matrix:
+        maya: ["2024", "2025"]
+    runs-on: ubuntu-latest
+    container: tahv/mayapy:${{ matrix.maya }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: mayapy -m pip install pytest
+      - run: mayapy -m pytest tests/maya -v -rs
+      - name: Build the example scenes and batch-check them
+        run: |
+          mayapy examples/make_scenes.py examples/scenes
+          code=0
+          mayapy preflight_batch.py examples/scenes --out out --snapshots || code=$?
+          echo "exit code $code"
+          # One of the two scenes is broken on purpose, so exactly one must fail.
+          test "$code" -eq 1
+      - name: Batch export (needs the Maya USD plug-in)
+        run: |
+          code=0
+          mayapy preflight_batch.py examples/scenes --out out --export || code=$?
+          echo "exit code $code"
+          if [ "$code" -eq 2 ]; then
+            echo "::warning::Maya USD plug-in is not in this image, so the export was not tested"
+          else
+            test "$code" -eq 1
+            test -f out/clean_crate.usda
+            test ! -f out/broken_crate.usda
+          fi
+      - name: Re-check a saved snapshot without starting Maya
+        run: |
+          code=0
+          PYTHONPATH=scripts mayapy -m usd_preflight out/broken_crate.snapshot.json --profile profiles/sim_ready.json || code=$?
+          test "$code" -eq 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: maya-${{ matrix.maya }}
+          path: out/
