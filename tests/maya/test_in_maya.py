@@ -73,13 +73,16 @@ def test_broken_scene_reports_exactly_the_planted_problems(broken):
 
 
 def test_issues_point_at_components_maya_can_select(broken):
-    by_check = {(i.check, i.node): i for i in run_checks(collect()).issues}
+    issues = run_checks(collect()).issues
+    by_check = {(i.check, i.node): i for i in issues if i.component != "vtx"}
     assert by_check[("material.unassigned_faces", "|props|crate")].indices == [0]
     assert by_check[("mesh.zero_area_faces", "|props|sliver")].indices == [1]
     assert len(by_check[("mesh.ngons", "|props|barrel")].indices) == 2
     edge = by_check[("mesh.nonmanifold", "|props|tee")]
     assert edge.component == "e" and len(edge.indices) == 1
-    for issue in by_check.values():
+    # Maya also reports the two ends of that edge as non-manifold vertices.
+    assert [len(i.indices) for i in issues if i.component == "vtx"] == [2]
+    for issue in issues:
         targets = issue.selection()
         if issue.node:
             cmds.select(targets, replace=True)          # raises if Maya cannot resolve them
@@ -145,10 +148,12 @@ def test_plugin_command(broken, tmp_path):
         assert data["up_axis"] == "y"
         assert sorted({(i["check"], i["node"]) for i in data["issues"]}) == pairs(expected)
 
+        # Only the squashed box: its scale, and its material's texture outside the project.
         cmds.select("|props|squashed", replace=True)
-        assert cmds.usdPreflight(selection=True) == [0, 1]
+        assert cmds.usdPreflight(selection=True) == [0, 2]
         profile = tmp_path / "strict.json"
-        profile.write_text(json.dumps({"severity": {"mesh.nonuniform_scale": "error"}}))
+        profile.write_text(json.dumps({"severity": {"mesh.nonuniform_scale": "error"},
+                                       "disable": ["texture.outside_project"]}))
         assert cmds.usdPreflight(selection=True, profile=str(profile)) == [1, 0]
     finally:
         cmds.unloadPlugin("usdPreflight")
